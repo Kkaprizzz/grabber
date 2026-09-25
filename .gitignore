@@ -1,0 +1,11 @@
+.env
+*.env
+!.env.example
+*.jks
+*.keystore
+key.properties
+build/
+.dart_tool/
+bin/
+.idea/
+.vscode/
