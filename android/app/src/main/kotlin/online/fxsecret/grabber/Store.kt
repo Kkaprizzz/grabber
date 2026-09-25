@@ -61,6 +61,8 @@ class Job(
     val title: String,
     val platform: String,
     val thumb: String?,
+    /** width / height of the video, so covers keep their shape; 0 = unknown. */
+    val aspect: Double,
     val steps: List<Step>,
     val createdAt: Long,
 ) {
@@ -78,6 +80,7 @@ class Job(
         .put("title", title)
         .put("platform", platform)
         .put("thumb", thumb)
+        .put("aspect", aspect)
         .put("steps", JSONArray(steps.map { it.toJson() }))
         .put("createdAt", createdAt)
         .put("state", state)
@@ -92,6 +95,7 @@ class Job(
             title = j.optString("title"),
             platform = j.optString("platform"),
             thumb = j.optString("thumb").ifEmpty { null },
+            aspect = j.optDouble("aspect", 0.0).takeUnless { it.isNaN() } ?: 0.0,
             steps = j.getJSONArray("steps").objects().map(Step::fromJson),
             createdAt = j.optLong("createdAt"),
         ).apply {
@@ -121,12 +125,13 @@ class Entry(
     val title: String,
     val platform: String,
     val thumb: String?,
+    val aspect: Double,
     val files: List<SavedFile>,
     val at: Long,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id).put("url", url).put("title", title).put("platform", platform)
-        .put("thumb", thumb).put("files", JSONArray(files.map { it.toJson() })).put("at", at)
+        .put("thumb", thumb).put("aspect", aspect).put("files", JSONArray(files.map { it.toJson() })).put("at", at)
 
     companion object {
         fun fromJson(j: JSONObject) = Entry(
@@ -135,6 +140,7 @@ class Entry(
             title = j.optString("title"),
             platform = j.optString("platform"),
             thumb = j.optString("thumb").ifEmpty { null },
+            aspect = j.optDouble("aspect", 0.0).takeUnless { it.isNaN() } ?: 0.0,
             files = j.optJSONArray("files").objects().map(SavedFile::fromJson),
             at = j.optLong("at"),
         )

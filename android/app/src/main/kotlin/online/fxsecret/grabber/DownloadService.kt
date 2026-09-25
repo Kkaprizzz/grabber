@@ -142,7 +142,7 @@ class DownloadService : Service() {
             val files = fetch(job, dir)
             update(job, "Сохраняю", -1f)
             val saved = files.map { (file, collection) -> Media.save(this, file, collection) }
-            val entry = Entry(job.id, job.url, job.title, job.platform, saveThumb(job), saved, System.currentTimeMillis())
+            val entry = Entry(job.id, job.url, job.title, job.platform, saveThumb(job), job.aspect, saved, System.currentTimeMillis())
             Store.complete(job, entry)
             notifyDone(entry)
         } catch (e: Throwable) {

@@ -69,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
     final url = text == null ? null : extractUrl(text);
     String? offer;
-    if (url != null && siteOf(url) != Site.other && url != app.dismissedClip && url != _lastPicked) {
+    if (url != null && worthOffering(url) && url != app.dismissedClip && url != _lastPicked) {
       final key = linkKey(url);
       final known = app.history.any((e) => linkKey(e.url) == key) || app.queue.any((j) => linkKey(j.url) == key);
       if (!known) offer = url;
@@ -241,7 +241,7 @@ class _ClipBanner extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('В буфере ссылка на ${site.label}', style: t.labelLarge),
+                    Text(site == Site.other ? 'В буфере ссылка' : 'В буфере ссылка на ${site.label}', style: t.labelLarge),
                     const SizedBox(height: 2),
                     Text(short, style: t.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
@@ -279,7 +279,7 @@ class _ActiveJob extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Cover(url: job.thumb, width: rowThumbWidth(job.platform, 72), height: 72),
+              Cover(url: job.thumb, width: rowThumbWidth(job.aspect, 72), height: 72),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -459,7 +459,7 @@ class _HistoryRow extends StatelessWidget {
           children: [
             Opacity(
               opacity: missing ? 0.4 : 1,
-              child: Cover(file: entry.thumb, width: rowThumbWidth(entry.platform, 56), height: 56),
+              child: Cover(file: entry.thumb, width: rowThumbWidth(entry.aspect, 56), height: 56),
             ),
             const SizedBox(width: 12),
             Expanded(

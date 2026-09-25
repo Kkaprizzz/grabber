@@ -3,7 +3,7 @@ description: "Граббер — загрузчик видео из TikTok, YouT
 publish_to: 'none'
 
 # CI overrides both from the release tag (vX.Y.Z → X*10000+Y*100+Z).
-version: 1.0.0+10000
+version: 1.1.0+10100
 
 environment:
   sdk: ^3.13.4

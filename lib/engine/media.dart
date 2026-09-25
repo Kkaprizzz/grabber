@@ -2,6 +2,11 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'links.dart';
+import 'native.dart';
+
+/// Links with more videos than this are playlists or channels, which the
+/// app doesn't do; fewer is a post with several clips, shown as a grid.
+const maxItems = 30;
 
 /// One quality to offer: a yt-dlp format spec plus what the user sees.
 class VideoOption {
@@ -60,6 +65,8 @@ class Media {
   Media._({
     required this.probeId,
     required this.site,
+    required this.label,
+    required this.generic,
     required this.url,
     required this.title,
     required this.uploader,
@@ -75,6 +82,13 @@ class Media {
 
   final String probeId;
   final Site site;
+
+  /// The site's name as yt-dlp knows it ("VK", "Rutube"), or the domain.
+  final String label;
+
+  /// Found by yt-dlp's generic extractor: a page it has no rules for, where
+  /// it guessed which video is the one. Worth a warning.
+  final bool generic;
 
   /// The canonical page URL (yt-dlp's webpage_url): history and "already
   /// downloaded" go by it.
@@ -107,6 +121,8 @@ class Media {
   Media withItems(List<Item> items, {bool? slideshow}) => Media._(
         probeId: probeId,
         site: site,
+        label: label,
+        generic: generic,
         url: url,
         title: title,
         uploader: uploader,
@@ -124,8 +140,18 @@ class Media {
     final d = jsonDecode(json) as Map<String, dynamic>;
     final url = (d['webpage_url'] as String?) ?? fallbackUrl;
     final site = _siteOf(d, url);
-    final entries = (d['entries'] as List?)?.cast<Map<String, dynamic>>();
+    final key = d['extractor_key'] as String? ?? '';
+    // Entries yt-dlp failed on come out as null.
+    final entries = (d['entries'] as List?)?.whereType<Map<String, dynamic>>().toList();
     final formats = _usable(d['formats'] as List?, site);
+
+    if (entries != null) {
+      final count = max(entries.length, (d['playlist_count'] as num?)?.toInt() ?? 0);
+      final listy = RegExp(r'(Tab|Playlist|Channel|User|Album|Series|Season)$').hasMatch(key);
+      if (site == Site.youtube || listy || count > maxItems) {
+        throw GrabError('Это плейлист или канал — их Граббер пока не качает. Открой нужное видео и поделись им.');
+      }
+    }
 
     final items = <Item>[];
     if (entries != null) {
@@ -140,10 +166,13 @@ class Media {
             index: index,
             streams: best != null && !_hasAudio(best) ? 2 : 1,
           ));
-        } else if (_bestThumb(e) case final img?) {
-          items.add(Item.image(thumb: img, url: img, ext: _imageExt(img)));
+        } else if (site == Site.instagram || site == Site.tiktok) {
+          // Only these carousels hold photos yt-dlp reports as thumbnails;
+          // elsewhere a formatless entry is just a failed one.
+          if (_bestThumb(e) case final img?) items.add(Item.image(thumb: img, url: img, ext: _imageExt(img)));
         }
       }
+      if (items.isEmpty) throw GrabError('По ссылке нечего скачать', updateMayHelp: true);
     } else if (formats.isEmpty && site == Site.instagram) {
       // A single-photo post: no formats, the picture is the thumbnail.
       if (_bestThumb(d) case final img?) items.add(Item.image(thumb: img, url: img, ext: _imageExt(img)));
@@ -152,22 +181,42 @@ class Media {
     final audioOnly = formats.where((f) => !_hasVideo(f) && _hasAudio(f)).toList();
     final m4a = _bestAudio(audioOnly.where(_isM4a).toList());
     final first = entries?.isNotEmpty ?? false ? entries!.first : d;
+    final videos = _videoOptions(formats, audioOnly);
 
     return Media._(
       probeId: probeId,
       site: site,
+      label: _label(key, site, url, d),
+      generic: key == 'Generic',
       url: url,
       title: _title(d, site),
       uploader: (d['uploader'] ?? d['channel'] ?? d['uploader_id']) as String?,
       duration: (d['duration'] as num?)?.round(),
       thumb: (d['thumbnail'] as String?) ?? (first['thumbnail'] as String?) ?? _bestThumb(d),
-      aspect: _aspect(d, formats, site),
-      videos: _videoOptions(formats, audioOnly),
+      aspect: _aspect(d, formats, site, audioOnly: videos.isEmpty && items.isEmpty),
+      videos: videos,
       hasAudio: formats.any(_hasAudio),
       audioSize: m4a == null ? null : _size(m4a).$1,
       items: items,
       slideshow: false,
     );
+  }
+
+  /// yt-dlp's extractor names, where they differ from what people call the site.
+  static const _names = {
+    'VK': 'VK', 'ZenYandex': 'Дзен', 'Odnoklassniki': 'OK', 'Soundcloud': 'SoundCloud', 'Twitter': 'Twitter',
+    'Reddit': 'Reddit', 'Twitch': 'Twitch', 'Vimeo': 'Vimeo', 'Pinterest': 'Pinterest', 'Facebook': 'Facebook',
+    'Rutube': 'Rutube', 'Dailymotion': 'Dailymotion', 'Bandcamp': 'Bandcamp', 'Bilibili': 'Bilibili',
+  };
+
+  static String _label(String key, Site site, String url, Map<String, dynamic> d) {
+    if (site != Site.other) return site.label;
+    if (key.isEmpty || key == 'Generic') return (d['webpage_url_domain'] as String?) ?? hostOf(url);
+    for (final e in _names.entries) {
+      if (key.startsWith(e.key)) return e.value;
+    }
+    // "TwitchClips" → "Twitch": the first word of the extractor's name.
+    return key.split(RegExp(r'(?<=[a-z0-9])(?=[A-Z])')).first;
   }
 
   static Site _siteOf(Map<String, dynamic> d, String url) => switch ((d['extractor_key'] as String? ?? '').toLowerCase()) {
@@ -178,21 +227,22 @@ class Media {
       };
 
   /// TikTok and Instagram "titles" are generated ("Video by …"); the
-  /// caption's first line says more.
+  /// caption's first line says more. Elsewhere the title is the title.
   static String _title(Map<String, dynamic> d, Site site) {
     final title = (d['title'] as String? ?? '').trim();
-    if (site == Site.youtube) return title.isEmpty ? 'Без названия' : title;
     final desc = (d['description'] as String? ?? '').trim().split('\n').first.trim();
-    final s = desc.isNotEmpty ? desc : title;
+    final captioned = site == Site.tiktok || site == Site.instagram;
+    final s = captioned ? (desc.isNotEmpty ? desc : title) : (title.isNotEmpty ? title : desc);
     if (s.isEmpty) return 'Без названия';
     return s.length > 90 ? '${s.substring(0, 88).trimRight()}…' : s;
   }
 
-  static double _aspect(Map<String, dynamic> d, List<Map<String, dynamic>> formats, Site site) {
+  static double _aspect(Map<String, dynamic> d, List<Map<String, dynamic>> formats, Site site, {required bool audioOnly}) {
+    if (audioOnly) return 1; // album art
     final w = (d['width'] as num?) ?? formats.lastWhere(_hasVideo, orElse: () => const {})['width'] as num?;
     final h = (d['height'] as num?) ?? formats.lastWhere(_hasVideo, orElse: () => const {})['height'] as num?;
     if (w != null && h != null && w > 0 && h > 0) return w / h;
-    return site == Site.youtube ? 16 / 9 : 9 / 16;
+    return site == Site.tiktok || site == Site.instagram ? 9 / 16 : 16 / 9;
   }
 }
 
@@ -212,10 +262,16 @@ List<Map<String, dynamic>> _usable(List? raw, Site site) {
   return clean.any(_hasVideo) ? clean : all;
 }
 
+const _videoExts = {'mp4', 'webm', 'mkv', 'mov', 'flv', '3gp', 'm4v', 'ts'};
+
 bool _hasVideo(Map<String, dynamic> f) {
   final v = f['vcodec'] as String?;
   if (v == 'none') return false;
-  return v != null || f['height'] != null || f['width'] != null;
+  if (v != null || f['height'] != null || f['width'] != null) return true;
+  // Pages yt-dlp has no rules for often give a bare file or stream with no
+  // codec info at all; by its container it's a video.
+  final proto = f['protocol'] as String? ?? '';
+  return f['acodec'] == null && (_videoExts.contains(f['ext']) || proto.startsWith('m3u8') || proto == 'http_dash_segments');
 }
 
 bool _hasAudio(Map<String, dynamic> f) => f['acodec'] != 'none';
@@ -326,6 +382,22 @@ List<VideoOption> _videoOptions(List<Map<String, dynamic>> formats, List<Map<Str
       streams: a == null ? 1 : 2,
     ));
   }
+  // Videos of unknown size (bare files on unknown sites): one choice, the best.
+  if (options.isEmpty) {
+    final unknown = formats.where((f) => _hasVideo(f) && _codecRank(f) >= 0).toList();
+    if (unknown.isNotEmpty) {
+      final best = unknown.reduce((a, b) => _tbr(b) > _tbr(a) ? b : a);
+      final (size, approx) = _size(best);
+      options.add(VideoOption(
+        label: 'Лучшее',
+        codec: _codec(best),
+        size: size,
+        approx: approx,
+        spec: 'bv*+ba/b',
+        streams: 1,
+      ));
+    }
+  }
   return options;
 }
 
@@ -394,8 +466,9 @@ Map<String, Object?> _job(Media m, List<Map<String, Object?>> steps) => {
       'id': newId(),
       'url': m.url,
       'title': m.title,
-      'platform': m.site.label,
+      'platform': m.label,
       'thumb': m.thumb,
+      'aspect': m.aspect,
       'steps': steps,
       'createdAt': DateTime.now().millisecondsSinceEpoch,
     };

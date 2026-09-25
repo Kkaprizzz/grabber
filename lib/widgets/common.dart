@@ -115,9 +115,9 @@ class Cover extends StatelessWidget {
   }
 }
 
-/// History and queue rows show covers shaped like the source: YouTube is
-/// landscape, TikTok and Instagram portrait.
-double rowThumbWidth(String platform, double height) => platform == 'YouTube' ? height * 16 / 9 : height * 3 / 4;
+/// History and queue rows show covers shaped like the source, within
+/// portrait 9:16 and landscape 16:9.
+double rowThumbWidth(double aspect, double height) => height * aspect.clamp(9 / 16, 16 / 9);
 
 class SectionLabel extends StatelessWidget {
   const SectionLabel(this.text, {super.key, this.trailing});

@@ -8,8 +8,6 @@ enum Site {
 
   const Site(this.label);
   final String label;
-
-  static Site byLabel(String s) => Site.values.firstWhere((x) => x.label == s, orElse: () => Site.other);
 }
 
 final _urlRe = RegExp(r'''https?://[^\s<>"'«»]+''');
@@ -26,6 +24,12 @@ String? extractUrl(String text) {
   return all.firstWhere((u) => siteOf(u) != Site.other, orElse: () => all.first);
 }
 
+/// "vk.com" for https://m.vk.com/… — a readable name for an unknown site.
+String hostOf(String url) {
+  final h = _host(url);
+  return h.startsWith('m.') ? h.substring(2) : h;
+}
+
 String _host(String url) {
   final h = Uri.tryParse(url)?.host.toLowerCase() ?? '';
   return h.startsWith('www.') ? h.substring(4) : h;
@@ -38,6 +42,20 @@ Site siteOf(String url) {
   if (on('tiktok.com')) return Site.tiktok;
   if (on('instagram.com') || h == 'instagr.am') return Site.instagram;
   return Site.other;
+}
+
+/// Sites worth offering from the clipboard. Anything yt-dlp knows works
+/// through sharing or the input field; the banner stays for sites people
+/// actually copy video links from, so it doesn't pop up for every article.
+const _popular = [
+  'vk.com', 'vk.ru', 'vkvideo.ru', 'rutube.ru', 'dzen.ru', 'twitter.com', 'x.com', 'reddit.com', 'redd.it',
+  'twitch.tv', 'vimeo.com', 'pinterest.com', 'pin.it', 'ok.ru', 'facebook.com', 'fb.watch', 'soundcloud.com',
+];
+
+bool worthOffering(String url) {
+  if (siteOf(url) != Site.other) return true;
+  final h = _host(url);
+  return _popular.any((d) => h == d || h.endsWith('.$d'));
 }
 
 /// What a link points at, without tracking parameters — to notice that

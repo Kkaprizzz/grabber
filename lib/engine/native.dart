@@ -31,17 +31,21 @@ GrabError humanize(String raw) {
   String msg;
   var update = false;
   if (has('unsupported url')) {
-    msg = 'Эта ссылка не поддерживается';
+    // yt-dlp already tried its generic "any page" extractor by then.
+    msg = 'На этой странице не нашлось видео';
   } else if (has('sign in to confirm') && has('bot')) {
     msg = 'YouTube просит подтвердить, что это не бот. Обычно помогает сменить сеть '
         '(Wi-Fi ↔ мобильный интернет) или подождать.';
   } else if (has('sign in to confirm your age') || has('age-restricted') || has('inappropriate for some users')) {
-    msg = 'Видео 18+: YouTube не отдаёт его без входа';
+    msg = 'Видео 18+: сайт не отдаёт его без входа';
   } else if (has('private video') || has('private post') || has('private account') || has('this account is private')) {
     msg = 'Это приватное видео';
-  } else if (has('rate-limit') || has('login required') || has('requested content is not available')) {
+  } else if (has('[instagram]') && (has('rate-limit') || has('login required') || has('requested content is not available'))) {
     msg = 'Instagram не отдал пост без входа. Так бывает с закрытыми аккаунтами и при частых запросах — '
         'попробуй позже.';
+  } else if (has('login required') || has('log in') || has('logged-in') || has('authentication') ||
+      has('--cookies') || has('this content is only available for registered users')) {
+    msg = 'Закрыто — сайт отдаёт это только после входа';
   } else if (has('ip address is blocked') || has('video unavailable') || has('this video is not available') ||
       has('post is unavailable') || has('has been removed')) {
     msg = 'Недоступно: удалено, скрыто или закрыто в этой стране';
@@ -93,6 +97,7 @@ class QueuedJob {
         title = j['title'] as String? ?? '',
         platform = j['platform'] as String? ?? '',
         thumb = j['thumb'] as String?,
+        aspect = _aspect(j),
         state = j['state'] as String? ?? 'queued',
         progress = (j['progress'] as num?)?.toDouble() ?? 0,
         phase = j['phase'] as String? ?? '',
@@ -100,6 +105,9 @@ class QueuedJob {
 
   final String id, url, title, platform, state, phase;
   final String? thumb, error;
+
+  /// width / height of the video; see [_aspect].
+  final double aspect;
 
   /// 0..1, or negative while nothing is measurable (merging, converting).
   final double progress;
@@ -116,15 +124,24 @@ class HistoryEntry {
         title = j['title'] as String? ?? '',
         platform = j['platform'] as String? ?? '',
         thumb = j['thumb'] as String?,
+        aspect = _aspect(j),
         files = ((j['files'] as List?) ?? const []).map((f) => SavedFile.fromJson(f as Map<String, dynamic>)).toList(),
         at = DateTime.fromMillisecondsSinceEpoch((j['at'] as num?)?.toInt() ?? 0);
 
   final String id, url, title, platform;
   final String? thumb;
+  final double aspect;
   final List<SavedFile> files;
   final DateTime at;
 
   int get size => files.fold(0, (a, f) => a + f.size);
+}
+
+/// Stored since 1.1; older entries only have the site to go by.
+double _aspect(Map<String, dynamic> j) {
+  final a = (j['aspect'] as num?)?.toDouble() ?? 0;
+  if (a > 0) return a;
+  return j['platform'] == 'YouTube' ? 16 / 9 : 3 / 4;
 }
 
 List<T> _list<T>(String? json, T Function(Map<String, dynamic>) f) =>

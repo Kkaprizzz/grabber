@@ -73,9 +73,14 @@ class _PickScreenState extends State<PickScreen> {
       final json = await Native.probe(
         photo ? tiktokAsVideo(url) : url,
         id,
-        // An Instagram carousel's photos have no formats; keep them instead
-        // of failing the whole post. Elsewhere "no formats" is a real error.
-        siteOf(url) == Site.instagram ? ['--ignore-no-formats-error'] : const [],
+        [
+          // An Instagram carousel's photos have no formats; keep them instead
+          // of failing the whole post. Elsewhere "no formats" is a real error.
+          if (siteOf(url) == Site.instagram) '--ignore-no-formats-error',
+          // One past the limit is enough to tell a post from a playlist,
+          // without extracting a whole channel.
+          '--playlist-end', '${maxItems + 1}',
+        ],
       );
       var m = Media.parse(json, id, fallbackUrl: url);
       if (m.site == Site.tiktok && m.videos.isEmpty) {
@@ -154,7 +159,7 @@ class _PickScreenState extends State<PickScreen> {
   Widget build(BuildContext context) {
     final m = _media;
     return Scaffold(
-      appBar: AppBar(title: Text(m?.site.label ?? siteOf(widget.url).label)),
+      appBar: AppBar(title: Text(m?.label ?? _guessLabel(widget.url))),
       body: AnimatedSwitcher(
         duration: motion(context, kFast),
         switchInCurve: kEase,
@@ -178,6 +183,11 @@ class _PickScreenState extends State<PickScreen> {
     );
   }
 
+  String _guessLabel(String url) {
+    final s = siteOf(url);
+    return s == Site.other ? hostOf(url) : s.label;
+  }
+
   String _buttonText() {
     final (size, approx) = _size;
     final s = fmtSize(size, approx: approx);
@@ -190,7 +200,7 @@ class _PickScreenState extends State<PickScreen> {
     final app = AppScope.of(context);
     final key = linkKey(m.url);
     final before = app.history.where((e) => linkKey(e.url) == key).firstOrNull;
-    final meta = [m.site.label, ?m.uploader, if (m.duration case final d? when d > 0) fmtDuration(d)].join(' · ');
+    final meta = [m.label, ?m.uploader, if (m.duration case final d? when d > 0) fmtDuration(d)].join(' · ');
 
     return ListView(
       key: const ValueKey('b'),
@@ -204,6 +214,11 @@ class _PickScreenState extends State<PickScreen> {
         if (before != null) ...[
           const SizedBox(height: 12),
           Note('Уже скачано ${fmtDate(before.at)} — можно ещё раз', fill: p.warnFill, ink: p.warnInk),
+        ],
+        if (m.generic) ...[
+          const SizedBox(height: 12),
+          Note('Сайт незнакомый: видео нашлось на странице наугад. Проверь по превью, то ли это.',
+              fill: p.warnFill, ink: p.warnInk),
         ],
         if (_photosError != null) ...[
           const SizedBox(height: 12),
