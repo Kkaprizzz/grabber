@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release APKs downloaded by the in-app updater, and files on Android 8–9
+     that are opened or shared by path. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+    <external-path name="shared" path="." />
+</paths>

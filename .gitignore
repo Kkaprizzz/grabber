@@ -9,3 +9,8 @@ build/
 bin/
 .idea/
 .vscode/
+*.iml
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/

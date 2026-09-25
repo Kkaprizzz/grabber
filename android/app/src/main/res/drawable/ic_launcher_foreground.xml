@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A claw-machine grabber holding a ball: the "граббер". Drawn inside
+     the 66dp safe zone of the 108dp adaptive-icon canvas so no launcher mask
+     clips it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M49,70 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 Z"
+        android:fillColor="#F8F4EF" android:strokeColor="#2E2823" android:strokeWidth="3.5" />
+    <path android:pathData="M56,28 L56,46 M44,46 L68,46
+                            M46,46 C38,55 39,66 47,74
+                            M66,46 C74,55 73,66 65,74"
+        android:strokeColor="#2E2823" android:strokeWidth="3.5"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

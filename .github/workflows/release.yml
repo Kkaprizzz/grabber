@@ -1,0 +1,97 @@
+name: release
+
+# Push an annotated tag like v1.2.0 (its message becomes the release notes).
+# Builds the arm64 APK signed with the app's key and attaches it, plus its
+# SHA-256, to a GitHub release. The app checks releases/latest for updates.
+#
+#   git tag -a v1.2.0 -m "What changed" && git push origin v1.2.0
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the GitHub release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version from tag
+        id: v
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::tag must look like v1.2.3, got $tag"
+            exit 1
+          fi
+          name="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          # v1.2.3 -> 10203: grows with every release, which is all Android asks.
+          code=$(( BASH_REMATCH[1] * 10000 + BASH_REMATCH[2] * 100 + BASH_REMATCH[3] ))
+          # checkout replaces the annotated tag with a lightweight one, whose
+          # "contents" is the commit message; fetch the real tag object.
+          git fetch --force --no-tags origin "refs/tags/$tag:refs/tags/$tag"
+          notes=$(git tag -l --format='%(contents)' "$tag" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
+          delim="NOTES_$(openssl rand -hex 8)"
+          {
+            echo "name=$name"
+            echo "code=$code"
+            echo "notes<<$delim"
+            echo "$notes"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: Signing key
+        working-directory: android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/grabber-release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/grabber-release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=grabber"
+            echo "keyPassword=$KEYSTORE_PASSWORD"
+          } > key.properties
+
+      - name: Test and build
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+          flutter build apk --release --target-platform android-arm64 \
+            --build-name "${{ steps.v.outputs.name }}" --build-number "${{ steps.v.outputs.code }}"
+          apk="$RUNNER_TEMP/grabber-${{ steps.v.outputs.name }}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$apk"
+          (cd "$RUNNER_TEMP" && sha256sum "grabber-${{ steps.v.outputs.name }}.apk" > "grabber-${{ steps.v.outputs.name }}.apk.sha256")
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ steps.v.outputs.notes }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP/grabber-${{ steps.v.outputs.name }}.apk" \
+            "$RUNNER_TEMP/grabber-${{ steps.v.outputs.name }}.apk.sha256" \
+            --title "Граббер ${{ steps.v.outputs.name }}" \
+            --notes "${NOTES:-Граббер ${{ steps.v.outputs.name }}}"
