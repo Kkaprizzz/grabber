@@ -62,6 +62,10 @@ android {
     buildTypes.configureEach {
         if (keystoreProperties.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
     }
+
+    buildTypes.getByName("release") {
+        proguardFiles("proguard-rules.pro")
+    }
 }
 
 kotlin {

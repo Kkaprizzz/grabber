@@ -87,7 +87,12 @@ object Engine {
 
     /** yt-dlp's own "ERROR: …" line from a failure, without the noise around it. */
     fun message(e: Throwable): String {
-        val text = (e as? YoutubeDLException)?.message ?: e.message ?: e.toString()
+        // ExceptionInInitializerError and friends carry no message of their
+        // own; the real failure is down the cause chain.
+        var root = e
+        while (root.message == null && root.cause != null && root.cause !== root) root = root.cause!!
+        if (root !== e && root !is YoutubeDLException) return "${e.javaClass.simpleName}: $root"
+        val text = root.message ?: root.toString()
         val err = text.lines().lastOrNull { it.startsWith("ERROR:") }
         return (err ?: text.lines().lastOrNull { it.isNotBlank() } ?: text).removePrefix("ERROR: ").trim()
     }
