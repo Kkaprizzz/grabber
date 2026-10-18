@@ -67,11 +67,15 @@ class AppState extends ChangeNotifier {
           _links.add(e['data'] as String);
       }
     });
-    queue = await Native.queue();
-    history = await Native.history();
-    notifyListeners();
-    _pendingLink = await Native.sharedText();
-    _started.complete();
+    try {
+      queue = await Native.queue();
+      history = await Native.history();
+      notifyListeners();
+      _pendingLink = await Native.sharedText();
+    } finally {
+      // The splash waits on this; never leave it up.
+      _started.complete();
+    }
     unawaited(Native.resume());
     unawaited(checkFiles());
     _warm = _warmUp();
@@ -129,22 +133,37 @@ class AppState extends ChangeNotifier {
     }();
   }
 
+  /// Bumped per [checkFiles] call, so an answer for an older history
+  /// (a download finished meanwhile) can't land on the newer one.
+  int _checkSeq = 0;
+
   Future<void> checkFiles() async {
-    final uris = [for (final e in history) ...e.files.map((f) => f.uri)];
+    final seq = ++_checkSeq;
+    final entries = history;
+    final uris = [for (final e in entries) ...e.files.map((f) => f.uri)];
     if (uris.isEmpty) {
-      missing = const {};
+      if (missing.isNotEmpty) {
+        missing = const {};
+        notifyListeners();
+      }
       return;
     }
-    final exists = await Native.exists(uris);
+    final List<bool> exists;
+    try {
+      exists = await Native.exists(uris);
+    } on GrabError {
+      return; // Can't tell; better than marking everything gone.
+    }
+    if (seq != _checkSeq || exists.length != uris.length) return;
     final gone = <String>{};
     var i = 0;
-    for (final e in history) {
+    for (final e in entries) {
       var any = false;
       for (final _ in e.files) {
-        if (i < exists.length && exists[i]) any = true;
+        if (exists[i]) any = true;
         i++;
       }
-      if (!any) gone.add(e.id);
+      if (!any && e.files.isNotEmpty) gone.add(e.id);
     }
     missing = gone;
     notifyListeners();

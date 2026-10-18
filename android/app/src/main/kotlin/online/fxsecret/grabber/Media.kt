@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
@@ -88,13 +89,36 @@ object Media {
         if (saved.startsWith("content://")) Uri.parse(saved)
         else FileProvider.getUriForFile(context, context.packageName + ".files", File(saved))
 
+    /**
+     * False only when the file is surely gone: no MediaStore row, or the row
+     * sits in the Gallery's trash. Anything we can't tell (a failed query,
+     * a provider hiccup) counts as present — the history shouldn't call an
+     * existing video deleted.
+     */
     fun exists(context: Context, saved: String): Boolean {
         if (!saved.startsWith("content://")) return File(saved).exists()
+        val uri = Uri.parse(saved)
         return try {
-            context.contentResolver.query(Uri.parse(saved), arrayOf(MediaStore.MediaColumns._ID), null, null, null)
-                ?.use { it.moveToFirst() } ?: false
+            val cursor = if (Build.VERSION.SDK_INT >= 30) {
+                // Trashed and pending rows are hidden by default; ask for them
+                // and decide ourselves, so a hidden row isn't taken for no row.
+                val args = Bundle().apply {
+                    putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE)
+                    putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+                }
+                context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.IS_TRASHED), args, null)
+            } else {
+                context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+            }
+            cursor?.use { c ->
+                when {
+                    !c.moveToFirst() -> false
+                    Build.VERSION.SDK_INT >= 30 -> c.getInt(0) == 0
+                    else -> true
+                }
+            } ?: true
         } catch (e: Exception) {
-            false
+            true
         }
     }
 

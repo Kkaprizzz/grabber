@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'screens/home.dart';
 import 'state.dart';
 import 'theme.dart';
+import 'widgets/splash.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,8 +35,23 @@ class GrabberApp extends StatelessWidget {
             locale: const Locale('ru'),
             supportedLocales: const [Locale('ru')],
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
-            home: const HomeScreen(),
+            home: const _Boot(),
           ),
+        ),
+      );
+}
+
+/// The splash until the queue and history are in, then the home screen.
+class _Boot extends StatelessWidget {
+  const _Boot();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<void>(
+        future: AppScope.read(context).started,
+        builder: (context, snap) => AnimatedSwitcher(
+          duration: motion(context, kPage),
+          switchInCurve: kEase,
+          child: snap.connectionState == ConnectionState.done ? const HomeScreen() : const Splash(),
         ),
       );
 }
